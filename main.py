@@ -6,6 +6,7 @@ import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
 import requests
+import pickle
 
 
 class OAuthTokensExpired(Exception):
@@ -143,32 +144,60 @@ class JourneyRecorder:
                       'Twitter': twitter_followers,
                       'Tumblr': tumblr_followers,
                       'Instagram': instagram_followers}]
+
         self.record = self.record.append(pd.DataFrame(new_entry), ignore_index=True)
         self.record['Date'] = pd.to_datetime(self.record['Date'])
         for column in ['Weekday', 'Twitter', 'Tumblr', 'Instagram']:
             self.record[column] = pd.to_numeric(self.record[column])
+        self.save()
 
     def plot(self):
+
+        # Set up the data in a better format in order to plot it with seaborn
         plot_data = self.record.melt('Date', value_vars=['Twitter', 'Tumblr', 'Instagram'],
                                      var_name='Social Media', value_name='Followers')
-        sns.set_style('whitegrid')
-        sns.lineplot(x='Date', y='Followers', hue='Social Media', data=plot_data, markers=True)
-        plt.show()
 
-    def save(self, jsonpath):
-        with open(jsonpath, 'r') as jsonfile:
-            jsondata = json.load(jsonfile)
+        # Plot styling
+        sns.set_style('ticks')
+        palette = {'Twitter': 'deepskyblue',
+                   'Instagram': 'orange',
+                   'Tumblr': 'steelblue'}
+        ax = sns.lineplot(x='Date', y='Followers', hue='Social Media',
+                          data=plot_data, markers=True, marker='o', palette=palette)
+        sns.despine()
 
-        jsondata['record'].update(self.record)
+        # Add annotation of last follower count next to each line
+        for line in ax.lines:
+            try:
+                y = line.get_ydata()
+                ax.annotate(f'{y[-1]}', xy=(1,y[-1]), xycoords=('axes fraction', 'data'),
+                            ha='left', va='center', color=line.get_color(), fontweight='bold')
+            except IndexError:
+                pass
 
-        with open(jsonpath, 'w') as jsonfile:
-            json.dump(jsondata, jsonfile)
+        # Tweaking the legend
+        ax.legend(loc='upper center', ncol=3)
+
+        plt.ylim(0, max(plot_data['Followers'].values)*1.5)
+        fig = plt.gcf()
+        fig.dpi = 150
+        fig.set_size_inches(8,4,forward=False)
+        fig.savefig('journey.png')
+
+    def save(self):
+        with open('journey.rec', 'wb') as savefile:
+            pickle.dump(self, savefile)
 
 
 if __name__ == '__main__':
-    jr = JourneyRecorder('nz_angel_', 'nz-angel', 'nz.angel_')
-    jr.record_today()
-    jr.plot()
+    try:
+        with open('journey.rec', 'rb') as recordfile:
+            recorder = pickle.load(recordfile)
+        recorder.record_today()
+        recorder.plot()
+    except FileNotFoundError:
+        recorder = JourneyRecorder('nz_angel_', 'nz-angel', 'nz.angel_')
+        recorder.record_today()
 
 
 
